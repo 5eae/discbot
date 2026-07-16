@@ -292,7 +292,7 @@ async def proof(interaction: discord.Interaction, videos: int,
     image_bytes = await image.read()
     discord_file = discord.File(io.BytesIO(image_bytes), filename=image.filename)
 
-    embed = discord.Embed(title=f"{videos} Videos - {payment.value}", color=discord.Color.blurple())
+    embed = discord.Embed(title=f"{videos} Videos - {payment.value}", color=discord.Color.random())
     embed.set_image(url=f"attachment://{image.filename}")
 
     try:
