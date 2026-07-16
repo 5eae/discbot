@@ -13,6 +13,7 @@ MOD_CHANNEL_ID = int(os.getenv("MOD_CHANNEL_ID", "0"))
 VOUCH_CHANNEL_ID = int(os.getenv("VOUCH_CHANNEL_ID", "0"))
 MOD_ROLE_ID = int(os.getenv("MOD_ROLE_ID", "0"))
 VOUCHABLE_ROLE_ID = int(os.getenv("VOUCHABLE_ROLE_ID", "0"))
+AUTOROLE_ID = int(os.getenv("AUTOROLE_ID", "0"))
 
 DATA_FILE = "vouch_data.json"
 
@@ -49,9 +50,10 @@ def get_vouches(user_id: int):
 
 # ---------- payment method choices ----------
 PAYMENT_CHOICES = [
-    app_commands.Choice(name="Gift Card", value="Gift Card"),
-    app_commands.Choice(name="Crypto", value="Crypto"),
     app_commands.Choice(name="PayPal", value="PayPal"),
+    app_commands.Choice(name="Cash App", value="Cash App"),
+    app_commands.Choice(name="Crypto", value="Crypto"),
+    app_commands.Choice(name="Bank Transfer", value="Bank Transfer"),
     app_commands.Choice(name="Other", value="Other"),
 ]
 
@@ -134,7 +136,40 @@ class ApprovalView(discord.ui.View):
         )
 
 
-# ---------- slash commands ----------
+def can_nuke(interaction: discord.Interaction) -> bool:
+    if interaction.user.guild_permissions.manage_messages:
+        return True
+    return is_mod(interaction)
+
+
+class NukeConfirmView(discord.ui.View):
+    def __init__(self, channel: discord.TextChannel, requester_id: int):
+        super().__init__(timeout=30)
+        self.channel = channel
+        self.requester_id = requester_id
+
+    @discord.ui.button(label="Confirm Nuke", style=discord.ButtonStyle.danger)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.requester_id and not can_nuke(interaction):
+            await interaction.response.send_message("You don't have permission to do that.", ephemeral=True)
+            return
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(content="Nuking channel...", view=self)
+
+        new_channel = await self.channel.clone(reason=f"Nuked by {interaction.user}")
+        await new_channel.edit(position=self.channel.position)
+        await self.channel.delete(reason=f"Nuked by {interaction.user}")
+        await new_channel.send(f"💥 Channel nuked by {interaction.user.mention}")
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(content="Cancelled.", view=self)
+
+
+
 @bot.tree.command(name="vouch", description="Submit a vouch for someone")
 @app_commands.describe(
     user="Who are you vouching for?",
@@ -179,7 +214,48 @@ async def vouches(interaction: discord.Interaction, user: discord.Member = None)
     await interaction.response.send_message(f"{target.mention} has **{count}** approved vouch(es).")
 
 
-# ---------- lifecycle ----------
+@bot.tree.command(name="nuke", description="Delete messages in this channel")
+@app_commands.describe(amount="How many recent messages to delete (leave blank to wipe the entire channel)")
+async def nuke(interaction: discord.Interaction, amount: int = None):
+    if not can_nuke(interaction):
+        await interaction.response.send_message("You don't have permission to do that.", ephemeral=True)
+        return
+
+    if amount is not None:
+        if amount < 1:
+            await interaction.response.send_message("Amount must be at least 1.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        deleted = await interaction.channel.purge(limit=amount)
+        await interaction.followup.send(
+            f"Deleted {len(deleted)} message(s). Note: Discord only allows bulk-deleting "
+            f"messages newer than 14 days — anything older won't be removed this way.",
+            ephemeral=True,
+        )
+    else:
+        view = NukeConfirmView(channel=interaction.channel, requester_id=interaction.user.id)
+        await interaction.response.send_message(
+            f"This will permanently delete **all messages** in {interaction.channel.mention} "
+            f"by cloning it and deleting the original. Continue?",
+            view=view,
+            ephemeral=True,
+        )
+
+
+
+@bot.event
+async def on_member_join(member: discord.Member):
+    if not AUTOROLE_ID:
+        return
+    role = member.guild.get_role(AUTOROLE_ID)
+    if role is None:
+        return
+    try:
+        await member.add_roles(role, reason="Autorole on join")
+    except discord.Forbidden:
+        print(f"Missing permission to assign autorole to {member}.")
+
+
 @bot.event
 async def on_ready():
     try:
