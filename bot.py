@@ -1,5 +1,7 @@
 import os
+import io
 import json
+import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -14,6 +16,7 @@ VOUCH_CHANNEL_ID = int(os.getenv("VOUCH_CHANNEL_ID", "0"))
 MOD_ROLE_ID = int(os.getenv("MOD_ROLE_ID", "0"))
 VOUCHABLE_ROLE_ID = int(os.getenv("VOUCHABLE_ROLE_ID", "0"))
 AUTOROLE_ID = int(os.getenv("AUTOROLE_ID", "0"))
+PROOF_WEBHOOK_URL = os.getenv("PROOF_WEBHOOK_URL", "")
 
 DATA_FILE = "vouch_data.json"
 GHOST_PING_FILE = "ghost_ping_channels.json"
@@ -261,6 +264,51 @@ async def vouches(interaction: discord.Interaction, user: discord.Member = None)
     target = user or interaction.user
     count = get_vouches(target.id)
     await interaction.response.send_message(f"{target.mention} has **{count}** approved vouch(es).")
+
+
+@bot.tree.command(name="proof", description="Post proof: video count, payment method, and a screenshot")
+@app_commands.describe(
+    videos="How many videos?",
+    payment="What payment method was used?",
+    image="Screenshot/proof image to attach",
+)
+@app_commands.choices(payment=PAYMENT_CHOICES)
+async def proof(interaction: discord.Interaction, videos: int,
+                 payment: app_commands.Choice[str], image: discord.Attachment):
+    if videos < 1:
+        await interaction.response.send_message("Videos must be at least 1.", ephemeral=True)
+        return
+    if not (image.content_type and image.content_type.startswith("image/")):
+        await interaction.response.send_message("Please attach an image file.", ephemeral=True)
+        return
+    if not PROOF_WEBHOOK_URL:
+        await interaction.response.send_message(
+            "Proof webhook isn't configured. Contact an admin.", ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    image_bytes = await image.read()
+    discord_file = discord.File(io.BytesIO(image_bytes), filename=image.filename)
+
+    embed = discord.Embed(title=f"{videos} Videos - {payment.value}", color=discord.Color.blurple())
+    embed.set_image(url=f"attachment://{image.filename}")
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            webhook = discord.Webhook.from_url(PROOF_WEBHOOK_URL, session=session)
+            await webhook.send(
+                embed=embed,
+                file=discord_file,
+                username=interaction.user.display_name,
+                avatar_url=interaction.user.display_avatar.url,
+            )
+    except (discord.HTTPException, ValueError) as e:
+        await interaction.followup.send(f"Failed to post proof: {e}", ephemeral=True)
+        return
+
+    await interaction.followup.send("Proof posted.", ephemeral=True)
 
 
 @bot.tree.command(name="nuke", description="Delete messages in this channel")
