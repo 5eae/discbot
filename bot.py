@@ -12,6 +12,7 @@ GUILD_ID = int(os.getenv("GUILD_ID", "0"))
 MOD_CHANNEL_ID = int(os.getenv("MOD_CHANNEL_ID", "0"))
 VOUCH_CHANNEL_ID = int(os.getenv("VOUCH_CHANNEL_ID", "0"))
 MOD_ROLE_ID = int(os.getenv("MOD_ROLE_ID", "0"))
+VOUCHABLE_ROLE_ID = int(os.getenv("VOUCHABLE_ROLE_ID", "0"))
 
 DATA_FILE = "vouch_data.json"
 
@@ -62,6 +63,13 @@ def is_mod(interaction: discord.Interaction) -> bool:
     if MOD_ROLE_ID and any(r.id == MOD_ROLE_ID for r in interaction.user.roles):
         return True
     return False
+
+
+def is_vouchable(member: discord.Member) -> bool:
+    if not VOUCHABLE_ROLE_ID:
+        # If no role is configured, fall back to allowing anyone.
+        return True
+    return any(r.id == VOUCHABLE_ROLE_ID for r in member.roles)
 
 
 # ---------- approval view ----------
@@ -139,6 +147,11 @@ async def vouch(interaction: discord.Interaction, user: discord.Member, videos: 
                  payment: app_commands.Choice[str]):
     if user.id == interaction.user.id:
         await interaction.response.send_message("You can't vouch for yourself.", ephemeral=True)
+        return
+    if not is_vouchable(user):
+        await interaction.response.send_message(
+            f"{user.mention} isn't eligible to receive vouches.", ephemeral=True
+        )
         return
     if videos < 1:
         await interaction.response.send_message("Videos must be at least 1.", ephemeral=True)
