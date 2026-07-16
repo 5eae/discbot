@@ -49,10 +49,9 @@ def get_vouches(user_id: int):
 
 # ---------- payment method choices ----------
 PAYMENT_CHOICES = [
-    app_commands.Choice(name="PayPal", value="PayPal"),
-    app_commands.Choice(name="Cash App", value="Cash App"),
+    app_commands.Choice(name="Gift Card", value="Gift Card"),
     app_commands.Choice(name="Crypto", value="Crypto"),
-    app_commands.Choice(name="Bank Transfer", value="Bank Transfer"),
+    app_commands.Choice(name="PayPal", value="PayPal"),
     app_commands.Choice(name="Other", value="Other"),
 ]
 
