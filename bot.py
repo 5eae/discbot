@@ -298,12 +298,7 @@ async def proof(interaction: discord.Interaction, videos: int,
     try:
         async with aiohttp.ClientSession() as session:
             webhook = discord.Webhook.from_url(PROOF_WEBHOOK_URL, session=session)
-            await webhook.send(
-                embed=embed,
-                file=discord_file,
-                username=interaction.user.display_name,
-                avatar_url=interaction.user.display_avatar.url,
-            )
+            await webhook.send(embed=embed, file=discord_file)
     except (discord.HTTPException, ValueError) as e:
         await interaction.followup.send(f"Failed to post proof: {e}", ephemeral=True)
         return
