@@ -20,6 +20,7 @@ PROOF_WEBHOOK_URL = os.getenv("PROOF_WEBHOOK_URL", "")
 
 DATA_FILE = "vouch_data.json"
 GHOST_PING_FILE = "ghost_ping_channels.json"
+AUTOROLE_FILE = "autorole.json"
 
 intents = discord.Intents.default()
 intents.members = True
@@ -73,6 +74,36 @@ def set_ghost_channel_ids(guild_id: int, channel_ids: list):
     data = load_ghost_channels()
     data[str(guild_id)] = channel_ids
     save_ghost_channels(data)
+
+
+def load_autoroles():
+    if not os.path.exists(AUTOROLE_FILE):
+        return {}
+    with open(AUTOROLE_FILE, "r") as f:
+        return json.load(f)
+
+
+def save_autoroles(data):
+    with open(AUTOROLE_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def get_autorole_id(guild_id: int):
+    data = load_autoroles()
+    stored = data.get(str(guild_id))
+    if stored:
+        return stored
+    # Fall back to the .env default if nothing's been set via /autorole yet.
+    return AUTOROLE_ID or None
+
+
+def set_autorole_id(guild_id: int, role_id: int | None):
+    data = load_autoroles()
+    if role_id:
+        data[str(guild_id)] = role_id
+    else:
+        data.pop(str(guild_id), None)
+    save_autoroles(data)
 
 
 # ---------- payment method choices ----------
@@ -222,6 +253,30 @@ class GhostPingView(discord.ui.View):
         self.add_item(GhostPingSelect())
 
 
+class AutoroleSelect(discord.ui.RoleSelect):
+    def __init__(self):
+        super().__init__(
+            placeholder="Select the autorole (select none to disable)",
+            min_values=0,
+            max_values=1,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        role_id = self.values[0].id if self.values else None
+        set_autorole_id(interaction.guild.id, role_id)
+        if role_id:
+            content = f"Autorole set to <@&{role_id}>."
+        else:
+            content = "Autorole disabled."
+        await interaction.response.edit_message(content=content, view=None)
+
+
+class AutoroleView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=60)
+        self.add_item(AutoroleSelect())
+
+
 @bot.tree.command(name="vouch", description="Submit a vouch for someone")
 @app_commands.describe(
     user="Who are you vouching for?",
@@ -334,8 +389,8 @@ async def nuke(interaction: discord.Interaction, amount: int = None):
         )
 
 
-@bot.tree.command(name="mention", description="Choose which channels ghost-ping new members when they join")
-async def mention(interaction: discord.Interaction):
+@bot.tree.command(name="ghost", description="Choose which channels ghost-ping new members when they join")
+async def ghost(interaction: discord.Interaction):
     if not is_mod(interaction):
         await interaction.response.send_message("You don't have permission to do that.", ephemeral=True)
         return
@@ -355,10 +410,28 @@ async def mention(interaction: discord.Interaction):
     )
 
 
+@bot.tree.command(name="autorole", description="Choose the role automatically given to new members")
+async def autorole(interaction: discord.Interaction):
+    if not is_mod(interaction):
+        await interaction.response.send_message("You don't have permission to do that.", ephemeral=True)
+        return
+
+    current = get_autorole_id(interaction.guild.id)
+    prefix = f"Current autorole: <@&{current}>\n\n" if current else "Autorole is currently disabled.\n\n"
+
+    view = AutoroleView()
+    await interaction.response.send_message(
+        prefix + "Select the role to auto-assign to new members (select none to disable):",
+        view=view,
+        ephemeral=True,
+    )
+
+
 @bot.event
 async def on_member_join(member: discord.Member):
-    if AUTOROLE_ID:
-        role = member.guild.get_role(AUTOROLE_ID)
+    autorole_id = get_autorole_id(member.guild.id)
+    if autorole_id:
+        role = member.guild.get_role(autorole_id)
         if role is not None:
             try:
                 await member.add_roles(role, reason="Autorole on join")
