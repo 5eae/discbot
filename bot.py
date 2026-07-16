@@ -3,6 +3,7 @@ import io
 import json
 import aiohttp
 import discord
+from typing import Optional
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -97,7 +98,7 @@ def get_autorole_id(guild_id: int):
     return AUTOROLE_ID or None
 
 
-def set_autorole_id(guild_id: int, role_id: int | None):
+def set_autorole_id(guild_id: int, role_id: Optional[int]):
     data = load_autoroles()
     if role_id:
         data[str(guild_id)] = role_id
